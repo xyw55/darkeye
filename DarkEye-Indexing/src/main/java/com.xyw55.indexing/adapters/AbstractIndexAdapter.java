@@ -2,6 +2,7 @@ package com.xyw55.indexing.adapters;
 
 import com.xyw55.index.interfaces.IndexAdapter;
 import com.xyw55.indexing.AbstractIndexingBolt;
+import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,8 +18,9 @@ public abstract class AbstractIndexAdapter implements IndexAdapter, Serializable
 
 	
 
-	abstract public boolean initializeConnection(String ip, int port,
-			String cluster_name, String index_name, String document_name,
-			int bulk, String date_format) throws Exception;
+	abstract public boolean initializeConnection(
+            String ip, int port,
+            String cluster_name, String index_name, String document_name,
+            JSONObject _index_mapping, int bulk, String date_format) throws Exception;
 
 }

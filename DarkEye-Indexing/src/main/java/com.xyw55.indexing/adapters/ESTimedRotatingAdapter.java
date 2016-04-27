@@ -2,6 +2,10 @@ package com.xyw55.indexing.adapters;
 
 import org.apache.commons.collections.Bag;
 import org.apache.commons.collections.HashBag;
+import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
+import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
+import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequestBuilder;
+import org.elasticsearch.action.admin.indices.mapping.put.PutMappingResponse;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
@@ -10,6 +14,7 @@ import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
+import org.elasticsearch.index.mapper.internal.IndexFieldMapper;
 import org.json.simple.JSONObject;
 
 import java.io.Serializable;
@@ -26,19 +31,20 @@ public class ESTimedRotatingAdapter extends AbstractIndexAdapter implements
 	private int _bulk_size;
 	private String _index_name;
 	private String _document_name;
-	private String _cluster_name;
-	private int _port;
-	private String _ip;
-	public transient TransportClient client;
+    private JSONObject _index_mapping;
+    private String _cluster_name;
+    private int _port;
+    private String _ip;
+    public transient TransportClient client;
+
 	private DateFormat dateFormat;
-	
+
 	private Map<String, String> tuning_settings;
 
 	private Bag bulk_set;
+    private Settings settings;
 
-	private Settings settings;
-	
-	public void setOptionalSettings(Map<String, String> settings)
+    public void setOptionalSettings(Map<String, String> settings)
 	{
 		tuning_settings = settings;
 	}
@@ -46,7 +52,7 @@ public class ESTimedRotatingAdapter extends AbstractIndexAdapter implements
 	@Override
 	public boolean initializeConnection(String ip, int port,
 			String cluster_name, String index_name, String document_name,
-			int bulk_size, String date_format) throws Exception {
+			JSONObject index_mapping,int bulk_size, String date_format) throws Exception {
 
 		bulk_set = new HashBag();
 
@@ -58,7 +64,8 @@ public class ESTimedRotatingAdapter extends AbstractIndexAdapter implements
 			_cluster_name = cluster_name;
 			_index_name = index_name;
 			_document_name = document_name;
-			_bulk_size = bulk_size;
+            _index_mapping = index_mapping;
+            _bulk_size = bulk_size;
 			
 
 			dateFormat = new SimpleDateFormat(date_format);
@@ -81,7 +88,8 @@ public class ESTimedRotatingAdapter extends AbstractIndexAdapter implements
 			client = new TransportClient(settings)
 					.addTransportAddress(new InetSocketTransportAddress(_ip,
 							_port));
-
+//            client.admin().indices().preparePutMapping("pcap_alert_test_2016.04.26.11").setType("pcap_alert")
+//                    .setSource(_index_mapping).execute().actionGet();
 			return true;
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -140,11 +148,23 @@ public class ESTimedRotatingAdapter extends AbstractIndexAdapter implements
 				Iterator<JSONObject> iterator = bulk_set.iterator();
 				
 				String index_postfix = dateFormat.format(new Date());
+                try {
+                    String indexName = _index_name + "_" + index_postfix;
+                    client.admin().indices().prepareCreate(indexName).execute().actionGet();
 
-				while (iterator.hasNext()) {
-					JSONObject setElement = iterator.next();
-					
-					_LOG.trace("[OpenSOC] Flushing to index: " + _index_name+ "_" + index_postfix);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                try {
+                    PutMappingRequestBuilder b = client.admin().indices().preparePutMapping(_index_name + "_" + index_postfix).setType(_document_name)
+                            .setSource(_index_mapping);
+                    b.execute().actionGet();
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
+                while (iterator.hasNext()) {
+                    JSONObject setElement = iterator.next();
 
 					IndexRequestBuilder a = client.prepareIndex(_index_name+ "_" + index_postfix,
 							_document_name);

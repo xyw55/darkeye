@@ -72,6 +72,10 @@ public class BodyIndexingBolt extends AbstractIndexingBolt {
         return this;
     }
 
+    public BodyIndexingBolt withIndexMapping(JSONObject IndexMapping) {
+        _IndexMapping = IndexMapping;
+        return this;
+    }
     /**
      *
      * @param DocumentName
@@ -138,7 +142,7 @@ public class BodyIndexingBolt extends AbstractIndexingBolt {
         try {
 
             _adapter.initializeConnection(_IndexIP, _IndexPort,
-                    _ClusterName, _IndexName, _DocumentName, _BulkIndexNumber, _indexDateFormat);
+                    _ClusterName, _IndexName, _DocumentName, _IndexMapping, _BulkIndexNumber, _indexDateFormat);
 
 //			_reporter = new MetricReporter();
 //			_reporter.initialize(metricConfiguration,
@@ -166,6 +170,7 @@ public class BodyIndexingBolt extends AbstractIndexingBolt {
             Long timestamp = tuple.getLongByField("timestamp");
             message.put("timestamp", timestamp);
             String httpBody = (String) tuple.getValueByField("body");
+            httpBody.replace("\\", "");
             Pattern pattern = Pattern.compile("\r\n");
             String[] strs = pattern.split(httpBody);
             Map map = new HashMap();
@@ -197,14 +202,14 @@ public class BodyIndexingBolt extends AbstractIndexingBolt {
                         message.put("statusInfo", thridStr);
                     }
                 } else if (strs[i].equals("")) {
-                    if (strs.length == i + 1) {
+                    if (strs.length == i + 2) {
                         message.put("body", strs[i + 1]);
                     } else {
                         message.put("body", "");
                     }
                     break;
                 } else {
-                    String[] commonLine = strs[i].split(":");
+                    String[] commonLine = strs[i].split(": ");
                     if (commonLine.length == 2) {
                         message.put(commonLine[0], commonLine[1]);
                     }
@@ -237,6 +242,7 @@ public class BodyIndexingBolt extends AbstractIndexingBolt {
             _collector.emit("httpMessage", new Values(message));
         } catch (Exception e) {
             e.printStackTrace();
+            System.out.println("error||||" + tuple);
             System.exit(0);
             Iterator<Tuple> iterator = tuple_queue.iterator();
             while(iterator.hasNext())

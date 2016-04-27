@@ -1,0 +1,34 @@
+{
+  "pcap_alert": {
+    "properties": {
+      "score": {
+        "type": "double"
+      },
+      "risks": {
+        "properties": {
+          "score": {
+            "type": "double"
+          },
+          "pcap_id": {
+            "index": "not_analyzed",
+            "type": "string"
+          },
+          "type": {
+            "index": "not_analyzed",
+            "type": "string"
+          },
+          "content": {
+            "index": "not_analyzed",
+            "type": "string"
+          }
+        }
+      },
+      "pcap_id": {
+        "index": "not_analyzed",
+        "type": "string"
+      }
+
+    }
+  }
+
+}

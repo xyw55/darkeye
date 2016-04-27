@@ -95,6 +95,11 @@ public class TelemetryIndexingBolt extends AbstractIndexingBolt {
 		return this;
 	}
 
+	public TelemetryIndexingBolt withIndexMapping(JSONObject IndexMapping) {
+		_IndexMapping = IndexMapping;
+		return this;
+	}
+
 	/**
 	 * 
 	 * @param ClusterName
@@ -170,18 +175,15 @@ public class TelemetryIndexingBolt extends AbstractIndexingBolt {
 			OutputCollector collector) throws IOException {
 
 		try {
-			
 			_adapter.initializeConnection(_IndexIP, _IndexPort,
-					_ClusterName, _IndexName, _DocumentName, _BulkIndexNumber, _indexDateFormat);
-			
+					_ClusterName, _IndexName, _DocumentName, _IndexMapping, _BulkIndexNumber, _indexDateFormat);
+
 //			_reporter = new MetricReporter();
 //			_reporter.initialize(metricConfiguration,
 //					TelemetryIndexingBolt.class);
 			this.registerCounters();
 		} catch (Exception e) {
-			
 			e.printStackTrace();
-					
 			JSONObject error = ErrorGenerator.generateErrorMessage(new String("bulk index problem"), e);
 			_collector.emit("error", new Values(error));
 		}
@@ -223,8 +225,8 @@ public class TelemetryIndexingBolt extends AbstractIndexingBolt {
 
 		} catch (Exception e) {
 			e.printStackTrace();
-			
-			
+			System.exit(0);
+
 			Iterator<Tuple> iterator = tuple_queue.iterator();
 			while(iterator.hasNext())
 			{

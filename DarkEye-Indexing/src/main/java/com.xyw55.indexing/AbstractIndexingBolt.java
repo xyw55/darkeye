@@ -24,6 +24,7 @@ import backtype.storm.topology.base.BaseRichBolt;
 //import com.codahale.metrics.Counter;
 import com.xyw55.index.interfaces.IndexAdapter;
 //import com.com.xyw55.indexing.metrics.MetricReporter;
+import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public abstract class AbstractIndexingBolt extends BaseRichBolt {
 	protected int _IndexPort = 0;
 	protected String _ClusterName;
 	protected String _IndexName;
+	protected JSONObject _IndexMapping;
 	protected String _DocumentName;
 	protected int _BulkIndexNumber = 10;
 
@@ -79,6 +81,8 @@ public abstract class AbstractIndexingBolt extends BaseRichBolt {
 			throw new IllegalStateException("_ClusterName must be specified");
 		if (this._IndexName == null)
 			throw new IllegalStateException("_IndexName must be specified");
+		if (this._IndexMapping == null)
+			throw new IllegalStateException("_IndexMapping must be specified");
 		if (this._DocumentName == null)
 			throw new IllegalStateException("_DocumentName must be specified");
 		if (this._adapter == null)

@@ -6,32 +6,25 @@ import backtype.storm.topology.OutputFieldsDeclarer;
 import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.Values;
-import com.xyw55.dao.JedisTemplate;
+import com.xyw55.Risk;
 import com.xyw55.helper.topology.ErrorGenerator;
 import com.xyw55.index.interfaces.IndexAdapter;
 import com.xyw55.json.serialization.JSONEncoderHelper;
 import org.apache.commons.configuration.Configuration;
 import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
-import redis.clients.jedis.JedisPool;
 
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
- * Created by xiayiwei on 16/4/23.
+ * Created by xiayiwei on 16/4/25.
  */
-public class HeaderIndexingBolt extends AbstractIndexingBolt {
+public class AlertIndexingBolt extends AbstractIndexingBolt {
 
     private JSONObject metricConfiguration;
     private String _indexDateFormat;
 
     private Set<Tuple> tuple_queue = new HashSet<Tuple>();
-
-    private JedisTemplate jedisTemplate;
 
     /**
      *
@@ -39,7 +32,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *            ip of ElasticSearch/Solr/etc...
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withIndexIP(String IndexIP) {
+    public AlertIndexingBolt withIndexIP(String IndexIP) {
         _IndexIP = IndexIP;
         return this;
     }
@@ -51,7 +44,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      * @return instance of bolt
      */
 
-    public HeaderIndexingBolt withIndexPort(int IndexPort) {
+    public AlertIndexingBolt withIndexPort(int IndexPort) {
         _IndexPort = IndexPort;
         return this;
     }
@@ -62,8 +55,13 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *            name of the index in ElasticSearch/Solr/etc...
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withIndexName(String IndexName) {
+    public AlertIndexingBolt withIndexName(String IndexName) {
         _IndexName = IndexName;
+        return this;
+    }
+
+    public AlertIndexingBolt withIndexMapping(JSONObject IndexMapping) {
+        _IndexMapping = IndexMapping;
         return this;
     }
 
@@ -73,14 +71,11 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *            name of cluster to index into in ElasticSearch/Solr/etc...
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withClusterName(String ClusterName) {
+    public AlertIndexingBolt withClusterName(String ClusterName) {
         _ClusterName = ClusterName;
         return this;
     }
-    public HeaderIndexingBolt withIndexMapping(JSONObject IndexMapping) {
-        _IndexMapping = IndexMapping;
-        return this;
-    }
+
     /**
      *
      * @param DocumentName
@@ -88,7 +83,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      * @return
      */
 
-    public HeaderIndexingBolt withDocumentName(String DocumentName) {
+    public AlertIndexingBolt withDocumentName(String DocumentName) {
         _DocumentName = DocumentName;
         return this;
     }
@@ -99,7 +94,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *            number of documents to bulk index together
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withBulk(int BulkIndexNumber) {
+    public AlertIndexingBolt withBulk(int BulkIndexNumber) {
         _BulkIndexNumber = BulkIndexNumber;
         return this;
     }
@@ -110,7 +105,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *            adapter that handles indexing of JSON strings
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withIndexAdapter(IndexAdapter adapter) {
+    public AlertIndexingBolt withIndexAdapter(IndexAdapter adapter) {
         _adapter = adapter;
 
         return this;
@@ -122,7 +117,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *           timestamp to append to index names
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withIndexTimestamp(String indexTimestamp) {
+    public AlertIndexingBolt withIndexTimestamp(String indexTimestamp) {
         _indexDateFormat = indexTimestamp;
 
         return this;
@@ -133,7 +128,7 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
      *            - configuration for pushing metrics into graphite
      * @return instance of bolt
      */
-    public HeaderIndexingBolt withMetricConfiguration(Configuration config) {
+    public AlertIndexingBolt withMetricConfiguration(Configuration config) {
         this.metricConfiguration = JSONEncoderHelper.getJSON(config
                 .subset("com.opensoc.metrics"));
         return this;
@@ -148,10 +143,10 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
 
             _adapter.initializeConnection(_IndexIP, _IndexPort,
                     _ClusterName, _IndexName, _DocumentName, _IndexMapping, _BulkIndexNumber, _indexDateFormat);
-            jedisTemplate = new JedisTemplate(new JedisPool());
+
 //			_reporter = new MetricReporter();
 //			_reporter.initialize(metricConfiguration,
-//					HeaderIndexingBolt.class);
+//					AlertIndexingBolt.class);
             this.registerCounters();
         } catch (Exception e) {
 
@@ -164,24 +159,27 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
     }
 
     public void execute(Tuple tuple) {
+        System.out.println("alert indexing||||" + tuple);
 
         String key = null;
-        JSONObject message = null;
+        JSONObject message = new JSONObject();
 
         try {
 
             String pcap_id = tuple.getStringByField("pcap_id");
-            String header_json_str = tuple.getStringByField("header_json");
-            Object obj = JSONValue.parse(header_json_str);
-            message = (JSONObject)obj;
+            message.put("pcap_id", pcap_id);
+            ArrayList<Risk> risks = new ArrayList<Risk>();
+            risks = (ArrayList<Risk>) tuple.getValueByField("risks");
+            ArrayList jsonRisks = new ArrayList();
+            for (Risk risk: risks) {
+                jsonRisks.add(risk.toJSONObject());
+            }
+            message.put("risks", jsonRisks);
 
-//            LOG.trace("[OpenSOC] Indexing bolt gets:  " + message);
-//            System.out.println("-----------index------------" + tuple + "||||||" + pcap_id + "||||||" + message);
             if (message == null || message.isEmpty())
                 throw new Exception(
                         "Could not parse message from binary stream");
-            key  = "darkeye:header:" + pcap_id;
-            jedisTemplate.setex(key, message.toJSONString(), 3600);
+
             int result_code = _adapter.bulkIndex(message);
 
             if (result_code == 0) {
@@ -200,11 +198,9 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
             } else if (result_code == 2) {
                 throw new Exception("Failed to index elements with client");
             }
-
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(0);
-
             Iterator<Tuple> iterator = tuple_queue.iterator();
             while(iterator.hasNext())
             {
@@ -212,13 +208,10 @@ public class HeaderIndexingBolt extends AbstractIndexingBolt {
                 _collector.fail(setElement);
 //				failCounter.inc();
 
-
                 JSONObject error = ErrorGenerator.generateErrorMessage(new String("bulk index problem"), e);
                 _collector.emit("error", new Values(error));
             }
             tuple_queue.clear();
-
-
         }
     }
 

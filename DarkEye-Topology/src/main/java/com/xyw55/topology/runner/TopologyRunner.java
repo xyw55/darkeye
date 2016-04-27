@@ -8,16 +8,22 @@ import backtype.storm.tuple.Fields;
 import com.esotericsoftware.kryo.serializers.MapSerializer;
 import com.xyw55.helper.topology.SettingsLoader;
 import com.xyw55.index.interfaces.IndexAdapter;
+import com.xyw55.indexing.AlertIndexingBolt;
 import com.xyw55.indexing.BodyIndexingBolt;
 import com.xyw55.indexing.HeaderIndexingBolt;
 import com.xyw55.indexing.TelemetryIndexingBolt;
+import com.xyw55.test.bolt.AlertBolt;
 import com.xyw55.test.bolt.GetPacaBodyStreamBolt;
 import com.xyw55.test.bolt.GetPacaHeaderStreamBolt;
 import com.xyw55.test.bolt.ThreatBolt;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.json.simple.JSONObject;
+import org.json.simple.JSONValue;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Map;
 
 /**
@@ -33,6 +39,8 @@ public abstract class TopologyRunner {
     protected String default_config_path = "/Users/xiayiwei/Documents/finalPaper/code/darkeye/DarkEye-Topology/src/main/resources/DarkEye_Configs";
     private static final String topology_name = "word-count-topology";
     protected boolean success = false;
+
+    protected JSONObject index_mapping = null;
 
     public void initTopology(String args[]) throws Exception {
 
@@ -131,6 +139,28 @@ public abstract class TopologyRunner {
                     "bolt.threat");
         }
 
+        if (true) {
+            String component_name = configuration.getString("bolt.alert.http.name",
+                    "DefaultAlertHttpBolt");
+            success = initializeAlertHttpBolt(component_name);
+            System.out.println("[OpenSOC] ------Component " + component_name
+                    + " initialized with the following settings:");
+
+            SettingsLoader.printConfigOptions((PropertiesConfiguration) configuration,
+                    "bolt.alert.http");
+        }
+
+        if (true) {
+            String component_name = configuration.getString("bolt.alerts.indexing.name",
+                    "DefaultAlertIndexingBolt");
+            success = initializeAlertIndexingBolt(component_name);
+            System.out.println("[OpenSOC] ------Component " + component_name
+                    + " initialized with the following settings:");
+
+            SettingsLoader.printConfigOptions((PropertiesConfiguration) configuration,
+                    "bolt.alert.indexing");
+        }
+
         if (local_mode) {
             config.setNumWorkers(configuration.getInt("num.workers"));
             config.setMaxTaskParallelism(1);
@@ -144,6 +174,79 @@ public abstract class TopologyRunner {
             StormSubmitter.submitTopology(topology_name, config,
                     builder.createTopology());
         }
+    }
+
+    private boolean initializeAlertIndexingBolt(String name) {
+        String messageUpstreamComponent = "DefaultAlertHttpBolt";
+        try {
+
+            System.out.println("[OpenSOC] ------" + name
+                    + " is initializing from " + messageUpstreamComponent);
+            /**
+             * adapter class
+             * com.xyw55.indexing.adapters.ESTimedRotatingAdapter
+             */
+            Class loaded_class = Class.forName(configuration.getString("bolt.alerts.indexing.adapter"));
+            IndexAdapter adapter = (IndexAdapter) loaded_class.newInstance();
+
+            Map<String, String> settings = SettingsLoader.getConfigOptions((PropertiesConfiguration)configuration, "optional.settings.bolt.index.search.");
+
+            if(settings != null && settings.size() > 0)
+            {
+                adapter.setOptionalSettings(settings);
+                System.out.println("[OpenSOC] Index Bolt picket up optional settings:");
+                SettingsLoader.printOptionalSettings(settings);
+            }
+
+            // dateFormat defaults to hourly if not specified
+            String dateFormat = "yyyy.MM.dd.hh";
+            if (configuration.containsKey("bolt.indexing.body.timestamp")) {
+                dateFormat = configuration.getString("bolt.indexing.body.timestamp");
+            }
+            String PATH_PREFIX = "/Users/xiayiwei/Documents/finalPaper/code/darkeye/DarkEye-Indexing/src/main/resources/";
+            File file = new File(PATH_PREFIX + "alertindex.json");
+            String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            JSONObject jsonObject = (JSONObject) JSONValue.parse(json);
+            AlertIndexingBolt indexing_bolt = new AlertIndexingBolt()
+                    .withIndexIP(configuration.getString("es.ip"))
+                    .withIndexPort(configuration.getInt("es.port"))
+                    .withClusterName(configuration.getString("es.clustername"))
+                    .withIndexName(configuration.getString("bolt.alerts.indexing.indexname"))
+                    .withIndexMapping(jsonObject)
+                    .withIndexTimestamp(dateFormat)
+                    .withDocumentName(
+                            configuration.getString("bolt.alerts.indexing.documentname"))
+                    .withBulk(configuration.getInt("bolt.alerts.indexing.bulk"))
+                    .withIndexAdapter(adapter)
+                    .withMetricConfiguration(configuration);
+
+            builder.setBolt(name, indexing_bolt,
+                    configuration.getInt("bolt.alerts.indexing.parallelism.hint"))
+                    .shuffleGrouping(messageUpstreamComponent, "alerts")
+                    .setNumTasks(configuration.getInt("bolt.alerts.indexing.num.tasks"));
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(0);
+        }
+
+        return true;
+    }
+
+    private boolean initializeAlertHttpBolt(String name) {
+        String messageUpstreamComponent = "DefaultThreatHttpBolt";
+        try {
+            System.out.println("[OpenSOC] ------" + name
+                    + " is initializing from " + messageUpstreamComponent);
+            AlertBolt alertBolt = new AlertBolt();
+            builder.setBolt(name, alertBolt)
+                    .shuffleGrouping(messageUpstreamComponent, "threats")
+                    .setNumTasks(1);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(0);
+        }
+        return true;
     }
 
     private boolean initializeThreatHttpBolt(String name) {
@@ -188,11 +291,16 @@ public abstract class TopologyRunner {
             if (configuration.containsKey("bolt.indexing.body.timestamp")) {
                 dateFormat = configuration.getString("bolt.indexing.body.timestamp");
             }
+            String PATH_PREFIX = "/Users/xiayiwei/Documents/finalPaper/code/darkeye/DarkEye-Indexing/src/main/resources/";
+            File file = new File(PATH_PREFIX + "alertindex.json");
+            String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            JSONObject jsonObject = (JSONObject) JSONValue.parse(json);
             BodyIndexingBolt indexing_bolt = new BodyIndexingBolt()
                     .withIndexIP(configuration.getString("es.ip"))
                     .withIndexPort(configuration.getInt("es.port"))
                     .withClusterName(configuration.getString("es.clustername"))
                     .withIndexName(configuration.getString("bolt.indexing.body.indexname"))
+                    .withIndexMapping(jsonObject)
                     .withIndexTimestamp(dateFormat)
                     .withDocumentName(
                             configuration.getString("bolt.indexing.body.documentname"))
@@ -239,11 +347,16 @@ public abstract class TopologyRunner {
             if (configuration.containsKey("bolt.indexing.header.timestamp")) {
                 dateFormat = configuration.getString("bolt.indexing.header.timestamp");
             }
+            String PATH_PREFIX = "/Users/xiayiwei/Documents/finalPaper/code/darkeye/DarkEye-Indexing/src/main/resources/";
+            File file = new File(PATH_PREFIX + "alertindex.json");
+            String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            JSONObject jsonObject = (JSONObject) JSONValue.parse(json);
             HeaderIndexingBolt indexing_bolt = new HeaderIndexingBolt()
                     .withIndexIP(configuration.getString("es.ip"))
                     .withIndexPort(configuration.getInt("es.port"))
                     .withClusterName(configuration.getString("es.clustername"))
                     .withIndexName(configuration.getString("bolt.indexing.header.indexname"))
+                    .withIndexMapping(jsonObject)
                     .withIndexTimestamp(dateFormat)
                     .withDocumentName(
                             configuration.getString("bolt.indexing.header.documentname"))
@@ -319,11 +432,16 @@ public abstract class TopologyRunner {
             if (configuration.containsKey("bolt.indexing.timestamp")) {
                 dateFormat = configuration.getString("bolt.indexing.timestamp");
             }
+            String PATH_PREFIX = "/Users/xiayiwei/Documents/finalPaper/code/darkeye/DarkEye-Indexing/src/main/resources/";
+            File file = new File(PATH_PREFIX + "alertindex.json");
+            String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            JSONObject jsonObject = (JSONObject) JSONValue.parse(json);
             TelemetryIndexingBolt indexing_bolt = new TelemetryIndexingBolt()
                     .withIndexIP(configuration.getString("es.ip"))
                     .withIndexPort(configuration.getInt("es.port"))
                     .withClusterName(configuration.getString("es.clustername"))
                     .withIndexName(configuration.getString("bolt.indexing.indexname"))
+                    .withIndexMapping(jsonObject)
                     .withIndexTimestamp(dateFormat)
                     .withDocumentName(
                             configuration.getString("bolt.indexing.documentname"))

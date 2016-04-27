@@ -63,6 +63,11 @@
             <artifactId>junit</artifactId>
             <version>3.8.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.xyw55</groupId>
+            <artifactId>DarkEye-Dao</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
 
     </dependencies>
 

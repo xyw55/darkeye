@@ -84,6 +84,11 @@ public class GenericInternalTestSpout extends BaseRichSpout{
 //            cnt = 0;
 
         _collector.emit(new Values(pcapBytes));
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
